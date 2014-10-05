@@ -12,7 +12,7 @@ this directory would be copied to '~/sketchbook/libraries/'.
 
 the following libraries are included:
 
-XSPI - SPI library, modified for XMega.  Use '#include <XSPI.h>'
-XSD  - SD Card library, modified for XMega.  Use '#include <XSD.h>'
+XSPI - SPI library, modified for XMega.  Use '#include &lt;XSPI.h&gt;'<br>
+XSD  - SD Card library, modified for XMega.  Use '#include &lt;XSD.h&gt;'<br>
 
 
