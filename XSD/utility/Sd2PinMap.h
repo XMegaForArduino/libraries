@@ -31,7 +31,13 @@ struct pin_map_t {
   uint8_t bit;
 };
 //------------------------------------------------------------------------------
-#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+
+#if defined(__AVR_XMEGA__)
+
+#include <wiring_private.h>
+#include <pins_arduino.h> /* this is the better way */
+
+#elif defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
 // Mega
 
 // Two Wire (aka I2C) ports
@@ -303,6 +309,79 @@ static const pin_map_t digitalPinMap[] = {
   {&DDRC, &PINC, &PORTC, 5}   // C5 19
 };
 #endif  // defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+
+
+#ifdef __AVR_XMEGA__
+
+uint8_t badPinNumber(void) // might as well keep it
+  __attribute__((error("Pin number is too large or not a constant")));
+
+
+// XMEGA code borrows what's done in 'core' for digitalRead, digitalWrite, etc.
+
+#define XMEGA_ALWAYS_INLINE_STATIC static inline __attribute__((always_inline))
+
+// SPI port (same as Arduino)
+uint8_t const SS_PIN = 10;
+uint8_t const MOSI_PIN = 11;
+uint8_t const MISO_PIN = 12;
+uint8_t const SCK_PIN = 13;
+
+// for now only return INPUT or OUTPUT
+XMEGA_ALWAYS_INLINE_STATIC uint8_t getPinMode(uint8_t pin)
+{
+  uint8_t bit = digitalPinToBitMask(pin);
+  uint8_t port = digitalPinToPort(pin);
+
+  if(*portModeRegister(port) & bit)
+  {
+    return OUTPUT;
+  }
+
+  return INPUT;
+}
+
+#define setPinMode pinMode
+#define getPinMode 
+
+XMEGA_ALWAYS_INLINE_STATIC uint8_t fastDigitalRead(uint8_t pin)
+{
+  uint8_t bit = digitalPinToBitMask(pin);
+  uint8_t port = digitalPinToPort(pin);
+
+  uint8_t oldSREG = SREG;
+  cli();
+
+  uint8_t bSet = (*portInputRegister(port) & bit) ? true : false;
+
+  SREG = oldSREG;
+
+  return bSet;
+}
+
+XMEGA_ALWAYS_INLINE_STATIC void fastDigitalWrite(uint8_t pin, uint8_t value)
+{
+  uint8_t bit = digitalPinToBitMask(pin);
+  uint8_t port = digitalPinToPort(pin);
+  volatile uint8_t * out = portOutputRegister(port);
+
+  uint8_t oldSREG = SREG;
+  cli();
+
+  if (value == LOW)
+  {
+    *out &= ~bit;
+  }
+  else
+  {
+    *out |= bit;
+  }
+
+  SREG = oldSREG;
+}
+
+#else // the old code
+
 //------------------------------------------------------------------------------
 static const uint8_t digitalPinCount = sizeof(digitalPinMap)/sizeof(pin_map_t);
 
@@ -349,4 +428,8 @@ static inline __attribute__((always_inline))
     badPinNumber();
   }
 }
+
+#endif // __AVR_XMEGA__
+
 #endif  // Sd2PinMap_h
+

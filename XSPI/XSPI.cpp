@@ -22,8 +22,6 @@ SPIClass SPI;
 
 void SPIClass::begin()
 {
-  spiRate = spiRate > 12 ? 6 : spiRate/2;
-
   SPIC_INTCTRL = 0; // disable SPI interrupts
 
   // Set SS to high so a connected chip will be "deselected" by default
@@ -81,14 +79,14 @@ void SPIClass::setClockDivider(uint8_t rate)
 
 byte SPIClass::transfer(byte _data)
 {
-register uint8_t tval = SPIC_STATUS; // read status register [to clear the bit]
+register uint8_t tval = SPIC_STATUS; // read status register [to clear the bit] (ignore warnings)
 volatile short ctr; // temporary
 
-  SPIC_DATA = b; // NOW, accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
-                 // and it transmits the FF on the SPI bus, while receiving a data byte
+  SPIC_DATA = _data; // NOW, accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
+                     // and it transmits the FF on the SPI bus, while receiving a data byte
 
   ctr = 0;
-  while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete
+  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
   {
     if(!(++ctr)) // this is a safety to prevent infinite loops.  remove if not needed.
       break;
@@ -99,13 +97,13 @@ volatile short ctr; // temporary
 
 void SPIClass::attachInterrupt()
 {
-  SPI_INTCTRL = (SPI_INTCTRL & ~SPI_INTLVL_gm)
+  SPIC_INTCTRL = (SPIC_INTCTRL & ~SPI_INTLVL_gm)
               | ((SPI_DEFAULT_INTLVL & 3) << SPI_INTLVL_gp);
 }
 
 void SPIClass::detachInterrupt()
 {
-  SPI_INTCTRL &= ~SPI_INTLVL_gm
+  SPIC_INTCTRL &= ~SPI_INTLVL_gm;
 }
 
 

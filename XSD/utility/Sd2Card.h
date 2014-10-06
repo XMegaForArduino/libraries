@@ -67,7 +67,7 @@ uint8_t const  SPI_MISO_PIN = MISO_PIN;
 /** SPI Clock pin */
 uint8_t const  SPI_SCK_PIN = SCK_PIN;
 /** optimize loops for hardware SPI */
-#define OPTIMIZE_HARDWARE_SPI
+//#define OPTIMIZE_HARDWARE_SPI
 
 #else  // SOFTWARE_SPI
 // define software SPI pins so Mega can use unmodified GPS Shield

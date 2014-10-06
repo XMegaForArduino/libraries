@@ -17,6 +17,9 @@
  * along with the Arduino Sd2Card Library.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
+
+// adapted for the ATXMega processors by Bob Frazier, S.F.T. Inc.
+
 #include <Arduino.h>
 #include "Sd2Card.h"
 //------------------------------------------------------------------------------
@@ -52,7 +55,7 @@ volatile short ctr; // temporary
   SPIC_DATA = b; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
                  // and it transmits the data on the SPI bus, while receiving a data byte
   ctr = 0;
-  while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete
+  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
   {
     if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
       break;
@@ -63,15 +66,14 @@ volatile short ctr; // temporary
 /** Receive a byte from the card */
 static  uint8_t spiRec(void)
 {
-  register uint8_t tval = SPIC_STATUS; // read status register [to clear the bit
-]
+  register uint8_t tval = SPIC_STATUS; // read status register [to clear the bit]
   volatile short ctr; // temporary
 
   SPIC_DATA = 0XFF; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
                     // and it transmits the FF data on the SPI bus, while receiving a data byte
 
   ctr = 0;
-  while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete
+  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
   {
     if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
       break;
@@ -94,28 +96,49 @@ volatile short ctr; // temporary
   SPIC_DATA = 0XFF; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
                     // and it transmits the FF data on the SPI bus, while receiving a data byte
 
-  for (size_t i = 0; i < n; i++)
+  if(buf) // can be NULL
   {
-    ctr = 0;
-    while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete
+    for (size_t i = 0; i < n; i++)
     {
-      if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
-        break;
-    }
+      ctr = 0;
+      while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+      {
+        if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
+          break;
+      }
 
-    b = SPIC_DATA;
-    SPIC_DATA = 0XFF; // queue up another
-    buf[i] = b;
+      b = SPIC_DATA;
+      SPIC_DATA = 0XFF; // queue up another
+      buf[i] = b;
+    }
+  }
+  else
+  {
+    for (size_t i = 0; i < n; i++)
+    {
+      ctr = 0;
+      while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+      {
+        if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
+          break;
+      }
+
+      b = SPIC_DATA; // will eat this for NULL buffer
+      SPIC_DATA = 0XFF; // queue up another
+    }
   }
 
   ctr = 0;
-  while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete [one last time]
+  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete [one last time]
   {
     if(!(++ctr))
       break;
   }
 
-  buf[n] = SPIC_DATA;
+  if(buf) // can be NULL
+  {
+    buf[n] = SPIC_DATA;
+  }
 
   return 0;
 }
@@ -141,7 +164,7 @@ register size_t i;
     while (1)
     {
       ctr = 0;
-      while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete
+      while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
       {
         if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
           break;
@@ -157,7 +180,7 @@ register size_t i;
   }
 
   ctr = 0;
-  while (!(SPIC_STATUS & _BV(7)))// { } // wait for the bit flag that says it's complete [one last time]
+  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete [one last time]
   {
     if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
       break;
@@ -463,7 +486,8 @@ uint8_t Sd2Card::init(uint8_t sckRateID, uint8_t chipSelectPin)
       type(SD_CARD_TYPE_SDHC);
 
     // discard rest of ocr - contains allowed voltage range
-    for (uint8_t i = 0; i < 3; i++) spiRec();
+    for (uint8_t i = 0; i < 3; i++)
+      spiRec();
   }
 
   chipSelectHigh();
@@ -555,11 +579,11 @@ uint8_t Sd2Card::readData(uint32_t block,
 #ifdef OPTIMIZE_HARDWARE_SPI
   if(offset > 0)
   {
-    spiRead(NULL, offset);
+    spiRec(NULL, offset);
   }
   if(count > 0)
   {
-    spiRead(dst, count);
+    spiRec(dst, count);
   }
   offset_ = offset + count;
 #else  // OPTIMIZE_HARDWARE_SPI
@@ -598,7 +622,7 @@ void Sd2Card::readEnd(void)
 #ifdef OPTIMIZE_HARDWARE_SPI
     if(offset_ < 514)
     {
-      spiRead(dst + offset_, 514 - offset_);
+      spiRec(NULL, 514 - offset_);
     }
     offset_ = 514;
 #else  // OPTIMIZE_HARDWARE_SPI
@@ -660,11 +684,11 @@ uint8_t Sd2Card::setSckRate(uint8_t sckRateID)
  
   if(sckRateID & 1 || sckRateID == 6)
   {
-    SPIC_CTRL &= ~SPI_CLIK2X_bm;
+    SPIC_CTRL &= ~SPI_CLK2X_bm;
   }
   else
   {
-    SPIC_CTRL |= SPI_CLIK2X_bm; // 2x clock
+    SPIC_CTRL |= SPI_CLK2X_bm; // 2x clock
   }
 
   SPIC_CTRL = (SPIC_CTRL & ~SPI_PRESCALER_gm) | ((sckRateID >> 1) & SPI_PRESCALER_gm);
@@ -682,7 +706,8 @@ uint8_t Sd2Card::waitNotBusy(uint16_t timeoutMillis)
     if (spiRec() == 0XFF)
       return true;
   }
-  while (((uint16_t)millis() - t0) < timeoutMillis) {}
+  while (((uint16_t)millis() - t0) < timeoutMillis);
+
   return false;
 }
 //------------------------------------------------------------------------------
