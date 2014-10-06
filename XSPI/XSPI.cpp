@@ -30,6 +30,9 @@ void SPIClass::begin()
   pinMode(SS, OUTPUT);
   pinMode(MISO, INPUT | INPUT_SENSE_BOTH);
 
+  pinMode(SCK, OUTPUT);
+  pinMode(MOSI, OUTPUT);
+
   // enable and initialize as SPI master with max clock and mode 0
 
   SPIC_CTRL = SPI_ENABLE_bm  // enable SPI
@@ -38,14 +41,6 @@ void SPIClass::begin()
             | SPI_MODE_0_gc  // mode zero
             | SPI_PRESCALER_DIV4_gc;  // low 2 bits are rate, see D manual section 18.6.1 table 18-3
   // NOTE:  mode bits 2 and 3 are both zero for mode 0
-
-  // By doing this AFTER enabling SPI, we avoid accidentally
-  // clocking in a single bit since the lines go directly
-  // from "input" to SPI control.  
-  // http://code.google.com/p/arduino/issues/detail?id=888
-  // NOTE: not sure if it applies to xmega
-  pinMode(SCK, OUTPUT);
-  pinMode(MOSI, OUTPUT);
 }
 
 
@@ -73,8 +68,8 @@ void SPIClass::setDataMode(uint8_t mode)
 
 void SPIClass::setClockDivider(uint8_t rate)
 {
-  SPIC_CTRL = (SPIC_CTRL & ~SPI_PRESCALER_gm) | (rate & 3) << SPI_PRESCALER_gp; // pre-scaler
-  SPIC_CTRL = (SPIC_CTRL & ~SPI_CLK2X_bm) | (rate & 4) ? SPI_CLK2X_bm : 0;      // clock 2x
+  SPIC_CTRL = (SPIC_CTRL & ~SPI_PRESCALER_gm) | ((rate & 3) << SPI_PRESCALER_gp); // pre-scaler
+  SPIC_CTRL = (SPIC_CTRL & ~SPI_CLK2X_bm) | ((rate & 4) ? SPI_CLK2X_bm : 0);      // clock 2x
 }
 
 byte SPIClass::transfer(byte _data)

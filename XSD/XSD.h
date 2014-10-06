@@ -19,8 +19,8 @@
 
 #include <Arduino.h>
 
-#include <utility/SdFat.h>
-#include <utility/SdFatUtil.h>
+#include "utility/SdFat.h"
+#include "utility/SdFatUtil.h"
 
 #define FILE_READ O_READ
 #define FILE_WRITE (O_READ | O_WRITE | O_CREAT)
@@ -87,6 +87,9 @@ public:
   boolean remove(char *filepath);
   
   boolean rmdir(char *filepath);
+
+  // debug function, added by me
+  uint8_t get_card_error(void) { return card.errorCode(); }
 
 protected:
 

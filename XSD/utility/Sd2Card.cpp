@@ -408,22 +408,18 @@ uint8_t Sd2Card::init(uint8_t sckRateID, uint8_t chipSelectPin)
   pinMode(chipSelectPin_, OUTPUT);
   chipSelectHigh();
 
-  pinMode(MISO, INPUT | INPUT_SENSE_BOTH);
-
 #ifndef SOFTWARE_SPI
 
-  spiInit(SPI_SD_INIT_RATE);
+  pinMode(MISO, INPUT | INPUT_SENSE_BOTH);
 
-  // By doing this AFTER enabling SPI, we avoid accidentally
-  // clocking in a single bit since the lines go directly
-  // from "input" to SPI control.  
-  // http://code.google.com/p/arduino/issues/detail?id=888
-  // NOTE: not sure if it applies to xmega
   pinMode(SCK, OUTPUT);
   pinMode(MOSI, OUTPUT);
 
+  spiInit(SPI_SD_INIT_RATE);
+
 #else // SOFTWARE_SPI
 
+  pinMode(SPI_MISO_PIN, INPUT | INPUT_SENSE_BOTH);
   pinMode(SPI_MOSI_PIN, OUTPUT);
   pinMode(SPI_SCK_PIN, OUTPUT);
 
