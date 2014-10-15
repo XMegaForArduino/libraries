@@ -28,34 +28,45 @@
 #error this file is for XMEGA only
 #endif // __AVR_XMEGA__
 
+#ifndef DEFAULT_SPI // if not defined, use SPIC - see Arduino.h (should already be defined)
+#warning defining DEFAULT_SPI as SPIC
+#define DEFAULT_SPI SPIC
+#endif // DEFAULT_SPI
+
+#define SPIREG_INTCTRL ((&(DEFAULT_SPI))->INTCTRL)
+#define SPIREG_CTRL    ((&(DEFAULT_SPI))->CTRL)
+#define SPIREG_DATA    ((&(DEFAULT_SPI))->DATA)
+#define SPIREG_STATUS  ((&(DEFAULT_SPI))->STATUS)
+
+
 // functions for hardware SPI
 
 static void spiInit(uint8_t spiRate) /* using the SdFat library definitions this should work */
 {
   spiRate = spiRate > 12 ? 6 : spiRate/2;
 
-  SPIC_INTCTRL = 0; // disable SPI interrupts
+  SPIREG_INTCTRL = 0; // disable SPI interrupts
 
   // enable and initialize as SPI master with max clock and mode 0
 
-  SPIC_CTRL = SPI_ENABLE_bm  // enable SPI
-            | SPI_MASTER_bm  // master mode
-            | SPI_MODE_0_gc  // mode zero
-            | ((spiRate & 1 || spiRate == 6) ? 0 : SPI_CLK2X_bm) // clock 2x bit
-            | (spiRate >> 1); // bits 1:0 [matches values used for atmega] see D manual section 18.6.1 table 18-3
+  SPIREG_CTRL = SPI_ENABLE_bm  // enable SPI
+              | SPI_MASTER_bm  // master mode
+              | SPI_MODE_0_gc  // mode zero
+              | ((spiRate & 1 || spiRate == 6) ? 0 : SPI_CLK2X_bm) // clock 2x bit
+              | (spiRate >> 1); // bits 1:0 [matches values used for atmega] see D manual section 18.6.1 table 18-3
   // NOTE:  mode bits 2 and 3 are both zero for mode 0
 }
 
 /** Send a byte to the card */
 static void spiSend(uint8_t b)
 {
-register uint8_t tval = SPIC_STATUS; // read status register [to clear the bit]
+register uint8_t tval = SPIREG_STATUS; // read status register [to clear the bit]
 volatile short ctr; // temporary
 
-  SPIC_DATA = b; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
+  SPIREG_DATA = b; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                  // and it transmits the data on the SPI bus, while receiving a data byte
   ctr = 0;
-  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+  while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
   {
     if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
       break;
@@ -66,20 +77,20 @@ volatile short ctr; // temporary
 /** Receive a byte from the card */
 static  uint8_t spiRec(void)
 {
-  register uint8_t tval = SPIC_STATUS; // read status register [to clear the bit]
+  register uint8_t tval = SPIREG_STATUS; // read status register [to clear the bit]
   volatile short ctr; // temporary
 
-  SPIC_DATA = 0XFF; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
+  SPIREG_DATA = 0XFF; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                     // and it transmits the FF data on the SPI bus, while receiving a data byte
 
   ctr = 0;
-  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+  while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
   {
     if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
       break;
   }
 
-  return SPIC_DATA; // return the received data byte
+  return SPIREG_DATA; // return the received data byte
 }
 
 #ifdef OPTIMIZE_HARDWARE_SPI
@@ -92,8 +103,8 @@ volatile short ctr; // temporary
   if (n-- == 0)
     return 0;
 
-  b = SPIC_STATUS; // read status register [to clear the bit]
-  SPIC_DATA = 0XFF; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
+  b = SPIREG_STATUS; // read status register [to clear the bit]
+  SPIREG_DATA = 0XFF; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                     // and it transmits the FF data on the SPI bus, while receiving a data byte
 
   if(buf) // can be NULL
@@ -101,14 +112,14 @@ volatile short ctr; // temporary
     for (size_t i = 0; i < n; i++)
     {
       ctr = 0;
-      while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+      while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
       {
         if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
           break;
       }
 
-      b = SPIC_DATA;
-      SPIC_DATA = 0XFF; // queue up another
+      b = SPIREG_DATA;
+      SPIREG_DATA = 0XFF; // queue up another
       buf[i] = b;
     }
   }
@@ -117,19 +128,19 @@ volatile short ctr; // temporary
     for (size_t i = 0; i < n; i++)
     {
       ctr = 0;
-      while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+      while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
       {
         if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
           break;
       }
 
-      b = SPIC_DATA; // will eat this for NULL buffer
-      SPIC_DATA = 0XFF; // queue up another
+      b = SPIREG_DATA; // will eat this for NULL buffer
+      SPIREG_DATA = 0XFF; // queue up another
     }
   }
 
   ctr = 0;
-  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete [one last time]
+  while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete [one last time]
   {
     if(!(++ctr))
       break;
@@ -137,7 +148,7 @@ volatile short ctr; // temporary
 
   if(buf) // can be NULL
   {
-    buf[n] = SPIC_DATA;
+    buf[n] = SPIREG_DATA;
   }
 
   return 0;
@@ -152,8 +163,8 @@ register size_t i;
   if (n == 0)
     return;
 
-  b = SPIC_STATUS;    // read status register [to clear the bit]
-  SPIC_DATA = buf[0]; // accessing the SPIC_DATA clears the status bit (D manual, 18.6.3)
+  b = SPIREG_STATUS;    // read status register [to clear the bit]
+  SPIREG_DATA = buf[0]; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                       // and it transmits the data on the SPI bus, while receiving a data byte
 
   if (n > 1)
@@ -164,13 +175,13 @@ register size_t i;
     while (1)
     {
       ctr = 0;
-      while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
+      while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete
       {
         if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
           break;
       }
 
-      SPIC_DATA = b;
+      SPIREG_DATA = b;
 
       if (i == n)
         break;
@@ -180,7 +191,7 @@ register size_t i;
   }
 
   ctr = 0;
-  while (!(SPIC_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete [one last time]
+  while (!(SPIREG_STATUS & SPI_IF_bm))// { } // wait for the bit flag that says it's complete [one last time]
   {
     if(!(++ctr)) // TODO:  remove if not needed - it busts out to prevent infinite loop
       break;
@@ -208,7 +219,8 @@ uint8_t spiRec(void)
   // output pin high - like sending 0XFF
   fastDigitalWrite(SPI_MOSI_PIN, HIGH);
 
-  for (uint8_t i = 0; i < 8; i++) {
+  for (uint8_t i = 0; i < 8; i++)
+  {
     fastDigitalWrite(SPI_SCK_PIN, HIGH);
 
     // adjust so SCK is nice
@@ -217,7 +229,8 @@ uint8_t spiRec(void)
 
     data <<= 1;
 
-    if (fastDigitalRead(SPI_MISO_PIN)) data |= 1;
+    if (fastDigitalRead(SPI_MISO_PIN))
+      data |= 1;
 
     fastDigitalWrite(SPI_SCK_PIN, LOW);
   }
@@ -231,7 +244,8 @@ void spiSend(uint8_t data)
 {
   // no interrupts during byte send - about 8 us
   cli();
-  for (uint8_t i = 0; i < 8; i++) {
+  for (uint8_t i = 0; i < 8; i++)
+  {
     fastDigitalWrite(SPI_SCK_PIN, LOW);
 
     fastDigitalWrite(SPI_MOSI_PIN, data & 0X80);
@@ -680,14 +694,14 @@ uint8_t Sd2Card::setSckRate(uint8_t sckRateID)
  
   if(sckRateID & 1 || sckRateID == 6)
   {
-    SPIC_CTRL &= ~SPI_CLK2X_bm;
+    SPIREG_CTRL &= ~SPI_CLK2X_bm;
   }
   else
   {
-    SPIC_CTRL |= SPI_CLK2X_bm; // 2x clock
+    SPIREG_CTRL |= SPI_CLK2X_bm; // 2x clock
   }
 
-  SPIC_CTRL = (SPIC_CTRL & ~SPI_PRESCALER_gm) | ((sckRateID >> 1) & SPI_PRESCALER_gm);
+  SPIREG_CTRL = (SPIREG_CTRL & ~SPI_PRESCALER_gm) | ((sckRateID >> 1) & SPI_PRESCALER_gm);
             // bits 1:0 [matches values used for atmega] see D manual section 18.6.1 table 18-3
 
   return true;
