@@ -23,7 +23,6 @@
 #include <Arduino.h>
 #include "Sd2Card.h"
 //------------------------------------------------------------------------------
-#ifndef SOFTWARE_SPI
 #ifndef __AVR_XMEGA__
 #error this file is for XMEGA only
 #endif // __AVR_XMEGA__
@@ -33,10 +32,15 @@
 #define DEFAULT_SPI SPIC
 #endif // DEFAULT_SPI
 
-#define SPIREG_INTCTRL ((&(DEFAULT_SPI))->INTCTRL)
-#define SPIREG_CTRL    ((&(DEFAULT_SPI))->CTRL)
-#define SPIREG_DATA    ((&(DEFAULT_SPI))->DATA)
-#define SPIREG_STATUS  ((&(DEFAULT_SPI))->STATUS)
+#ifndef SOFTWARE_SPI
+
+#define SPIREG_INTCTRL *((volatile uint8_t *)&((&(DEFAULT_SPI))->INTCTRL))
+#define SPIREG_CTRL    *((volatile uint8_t *)&((&(DEFAULT_SPI))->CTRL))
+#define SPIREG_DATA    *((volatile uint8_t *)&((&(DEFAULT_SPI))->DATA))
+#define SPIREG_STATUS  *((volatile uint8_t *)&((&(DEFAULT_SPI))->STATUS))
+#ifdef SPIC_CTRLB
+#define SPIREG_CTRLB   *((volatile uint8_t *)&((&(DEFAULT_SPI))->CTRLB))
+#endif // SPIC_CTRLB
 
 
 // functions for hardware SPI
@@ -55,6 +59,10 @@ static void spiInit(uint8_t spiRate) /* using the SdFat library definitions this
               | ((spiRate & 1 || spiRate == 6) ? 0 : SPI_CLK2X_bm) // clock 2x bit
               | (spiRate >> 1); // bits 1:0 [matches values used for atmega] see D manual section 18.6.1 table 18-3
   // NOTE:  mode bits 2 and 3 are both zero for mode 0
+
+#ifdef SPIREG_CTRLB
+  SPIREG_CTRLB = SPI_SSD_bm; // disables SS pin low causing 'slave mode'
+#endif // SPIREG_CTRLB
 }
 
 /** Send a byte to the card */
@@ -62,6 +70,8 @@ static void spiSend(uint8_t b)
 {
 register uint8_t tval = SPIREG_STATUS; // read status register [to clear the bit]
 volatile short ctr; // temporary
+
+  SPIREG_STATUS = SPI_IF_bm; // this is ALSO supposed to clear the bit
 
   SPIREG_DATA = b; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                  // and it transmits the data on the SPI bus, while receiving a data byte
@@ -79,6 +89,9 @@ static  uint8_t spiRec(void)
 {
   register uint8_t tval = SPIREG_STATUS; // read status register [to clear the bit]
   volatile short ctr; // temporary
+
+  SPIREG_STATUS = SPI_IF_bm; // this is ALSO supposed to clear the bit
+  SPIREG_STATUS = 0; // temporary, for testing
 
   SPIREG_DATA = 0XFF; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                     // and it transmits the FF data on the SPI bus, while receiving a data byte
@@ -104,6 +117,8 @@ volatile short ctr; // temporary
     return 0;
 
   b = SPIREG_STATUS; // read status register [to clear the bit]
+  SPIREG_STATUS = SPI_IF_bm; // this is ALSO supposed to clear the bit
+
   SPIREG_DATA = 0XFF; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                     // and it transmits the FF data on the SPI bus, while receiving a data byte
 
@@ -164,6 +179,8 @@ register size_t i;
     return;
 
   b = SPIREG_STATUS;    // read status register [to clear the bit]
+  SPIREG_STATUS = SPI_IF_bm; // this is ALSO supposed to clear the bit
+
   SPIREG_DATA = buf[0]; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
                       // and it transmits the data on the SPI bus, while receiving a data byte
 
@@ -334,6 +351,7 @@ uint32_t Sd2Card::cardSize(void)
   }
 }
 //------------------------------------------------------------------------------
+
 void Sd2Card::chipSelectHigh(void)
 {
   digitalWrite(chipSelectPin_, HIGH);
@@ -429,7 +447,11 @@ uint8_t Sd2Card::init(uint8_t sckRateID, uint8_t chipSelectPin)
   pinMode(SCK, OUTPUT);
   pinMode(MOSI, OUTPUT);
 
+  DEBUG_OUT(F("Calling spiInit()\r\n"));
+
   spiInit(SPI_SD_INIT_RATE);
+
+  DEBUG_OUT(F("Returned from spiInit()\r\n"));
 
 #else // SOFTWARE_SPI
 
@@ -439,9 +461,10 @@ uint8_t Sd2Card::init(uint8_t sckRateID, uint8_t chipSelectPin)
 
 #endif  // SOFTWARE_SPI
 
-  // must supply min of 74 clock cycles with CS high.
+  // must supply min of 74 SPI clock cycles with CS high.
   for (uint8_t i = 0; i < 10; i++) spiSend(0XFF);
 
+  DEBUG_OUT(F("Calling chipSelectLow()\r\n"));
   chipSelectLow();
 
   // command to go idle in SPI mode
@@ -450,6 +473,8 @@ uint8_t Sd2Card::init(uint8_t sckRateID, uint8_t chipSelectPin)
     if (((uint16_t)millis() - t0) > SD_INIT_TIMEOUT)
     {
       error(SD_CARD_ERROR_CMD0);
+      DEBUG_OUT(F("SD_INIT_TIMEOUT exceeded - SD_CARD_ERROR_CMD0\r\n"));
+
       goto fail;
     }
   }
@@ -691,7 +716,8 @@ uint8_t Sd2Card::setSckRate(uint8_t sckRateID)
     error(SD_CARD_ERROR_SCK_RATE);
     return false;
   }
- 
+
+#ifndef SOFTWARE_SPI 
   if(sckRateID & 1 || sckRateID == 6)
   {
     SPIREG_CTRL &= ~SPI_CLK2X_bm;
@@ -701,8 +727,11 @@ uint8_t Sd2Card::setSckRate(uint8_t sckRateID)
     SPIREG_CTRL |= SPI_CLK2X_bm; // 2x clock
   }
 
+  // NOTE:  this only works if SPI_RESCALER_bm is 3
   SPIREG_CTRL = (SPIREG_CTRL & ~SPI_PRESCALER_gm) | ((sckRateID >> 1) & SPI_PRESCALER_gm);
             // bits 1:0 [matches values used for atmega] see D manual section 18.6.1 table 18-3
+
+#endif // SOFTWARE_SPI 
 
   return true;
 }
@@ -717,6 +746,16 @@ uint8_t Sd2Card::waitNotBusy(uint16_t timeoutMillis)
       return true;
   }
   while (((uint16_t)millis() - t0) < timeoutMillis);
+
+  DEBUG_OUT(F("Warning, waitNotBusy timed out: "));
+  DEBUG_OUT((unsigned long)spiRec());
+  DEBUG_OUT(F(","));
+  DEBUG_OUT((unsigned long)spiRec());
+  DEBUG_OUT(F(","));
+  DEBUG_OUT((unsigned long)spiRec());
+  DEBUG_OUT(F(","));
+  DEBUG_OUT((unsigned long)spiRec());
+  DEBUG_OUT(F("\r\n"));
 
   return false;
 }

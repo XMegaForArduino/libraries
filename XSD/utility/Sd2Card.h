@@ -41,6 +41,21 @@ uint8_t const SPI_SD_INIT_RATE = 7;  /* divide by 128 */
  * but many SD cards will fail with GPS Shield V1.0.
  */
 #define MEGA_SOFT_SPI 0
+
+// TEMPORARY
+//#define ENABLE_DEBUG /* do this if I'm debugging */
+
+// TEMPORARY
+//#define SOFTWARE_SPI
+
+#ifdef ENABLE_DEBUG
+extern void DebugOut(const void * PROGMEM pStr);
+extern void DebugOut(unsigned long lVal);
+#define DEBUG_OUT(X) DebugOut(X)
+#else // !ENABLE_DEBUG
+#define DEBUG_OUT(X) /* nothing */
+#endif // ENABLE_DEBUG
+
 //------------------------------------------------------------------------------
 #if MEGA_SOFT_SPI && (defined(__AVR_ATmega1280__)||defined(__AVR_ATmega2560__))
 #define SOFTWARE_SPI
