@@ -12,12 +12,12 @@ this directory would be copied to '~/sketchbook/libraries/'.
 
 the following libraries are included:
 
-XSPI - SPI library, modified for XMega.  Use '#include &lt;XSPI.h&gt;'<br>
-XSD  - SD Card library, modified for XMega.  Use '#include &lt;XSD.h&gt;'<br>
-
+XSPI  - SPI library, modified for XMega.  Use '#include &lt;XSPI.h&gt;'<br>
+XSD   - SD Card library, modified for XMega.  Use '#include &lt;XSD.h&gt;'<br>
+XWire - 'Wire' library, modified for XMega.  Use '#include &lt;XWire.h&gt;'<br>
 
 Most (if not all) of the libraries are derived from the originals shipped with
-Arduino 1.05 and are licensed using [L]GPL v2 or v3.  The same licenses
+Arduino 1.06 and are licensed using [L]GPL v2 or v3.  The same licenses
 apply here, and of course (like the originals) they are available to you
 free of charge in accordance with the original license terms.
 
