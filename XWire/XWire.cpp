@@ -19,7 +19,8 @@
   Modified 2012 by Todd Krein (todd@krein.org) to implement repeated starts
 */
 
-extern "C" {
+extern "C"
+{
   #include <stdlib.h>
   #include <string.h>
   #include <inttypes.h>
@@ -133,8 +134,8 @@ void TwoWire::begin(void)
 void TwoWire::begin(uint8_t address)
 {
   twi_setAddress(pTWI, address);
-  twi_attachSlaveTxEvent(pTWI, onRequestService);
-  twi_attachSlaveRxEvent(pTWI, onReceiveService);
+  twi_attachSlaveTxEvent(pTWI, onRequestService, this);
+  twi_attachSlaveRxEvent(pTWI, onReceiveService, this);
 
   begin();
 }
@@ -324,9 +325,14 @@ void TwoWire::flush(void)
 }
 
 // behind the scenes function that is called when data is received
-void TwoWire::onReceiveService(TWI_t *pTWI, uint8_t* inBytes, int numBytes)
+void TwoWire::onReceiveService(TWI_t *pTWI, void *pCtx, const uint8_t *inBytes, int numBytes)
 {
-  TwoWire *pTW = FromTWI(pTWI);
+  TwoWire *pTW = (TwoWire *)pCtx;
+  
+  if(!pTW)
+  {
+    pTW = FromTWI(pTWI);
+  }
 
   // don't bother if user hasn't registered a callback (or no object)
   if(!pTW || !pTW->user_onReceive)
@@ -355,9 +361,14 @@ void TwoWire::onReceiveService(TWI_t *pTWI, uint8_t* inBytes, int numBytes)
 }
 
 // behind the scenes function that is called when data is requested
-void TwoWire::onRequestService(TWI_t *pTWI)
+void TwoWire::onRequestService(TWI_t *pTWI, void *pCtx)
 {
-  TwoWire *pTW = FromTWI(pTWI);
+  TwoWire *pTW = (TwoWire *)pCtx;
+  
+  if(!pTW)
+  {
+    pTW = FromTWI(pTWI);
+  }
 
   // don't bother if user hasn't registered a callback
   if(!pTW || !pTW->user_onRequest)

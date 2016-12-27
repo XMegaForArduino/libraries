@@ -26,7 +26,8 @@
 #include <Arduino.h> // make sure, because I use custom board-specific definitions
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif // cplusplus
 
   #include <inttypes.h>
@@ -53,6 +54,7 @@ extern "C" {
   #define TWI_ERROR_DATA_NACK  1
   #define TWI_ERROR_BUS_ERROR  2
   #define TWI_ERROR_ARB_LOST   3
+  #define TWI_ERROR_COLLISION  4
 
   // utility functions  
 
@@ -62,11 +64,9 @@ extern "C" {
   uint8_t twi_readFrom(TWI_t *, uint8_t, uint8_t*, uint8_t, uint16_t);
   uint8_t twi_writeTo(TWI_t *, uint8_t, uint8_t*, uint8_t, uint8_t, uint8_t);
   uint8_t twi_transmit(TWI_t *, const uint8_t*, uint8_t);
-  void twi_attachSlaveRxEvent(TWI_t *, void (*)(TWI_t *, uint8_t*, int) );
-  void twi_attachSlaveTxEvent(TWI_t *, void (*)(TWI_t *) );
-  void twi_reply(TWI_t *, uint8_t);
+  void twi_attachSlaveRxEvent(TWI_t *, void (*)(TWI_t *, void *, const uint8_t *, int), void * );
+  void twi_attachSlaveTxEvent(TWI_t *, void (*)(TWI_t *, void *), void * );
   void twi_stop(TWI_t *);
-  void twi_releaseBus(TWI_t *);
 
 #ifdef __cplusplus
 }

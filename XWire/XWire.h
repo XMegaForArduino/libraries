@@ -49,8 +49,8 @@ class TwoWire : public Stream
     /*static*/ void (*user_onReceive)(TwoWire *,int);
 
     // callbacks [must map back into the class]
-    static void onRequestService(TWI_t *);
-    static void onReceiveService(TWI_t *, uint8_t*, int);
+    static void onRequestService(TWI_t *, void *);
+    static void onReceiveService(TWI_t *, void *, const uint8_t *, int);
 
     TWI_t *pTWI; // pointer to TWI register for this connection
 

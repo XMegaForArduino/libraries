@@ -1,4 +1,6 @@
 /*
+  ** ORIGINAL COPYRIGHT BANNER **
+
   twi.c - TWI/I2C library for Wiring & Arduino
   Copyright (c) 2006 Nicholas Zambetti.  All right reserved.
 
@@ -17,10 +19,24 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
   Modified 2012 by Todd Krein (todd@krein.org) to implement repeated starts
+
 */
 
-// Modified for XMega processors by Bob Frazier for XMegaForArduino project
-// http://github.com/XMegaForArduino
+// --------------------------------------------------------------------------------
+// Modified for XMega processors by 'Big Bad Bombastic Bob' Frazier
+// for the XMegaForArduino project http://github.com/XMegaForArduino
+//
+// NOTE:  In many ways, this is a TRIVIAL implementation of the 2-wire protocol.
+//        The most useful information that can be gleaned from this library is
+//        the sequence of events, and correct bit assignments for the various
+//        registers.  A similar work that ONLY implements the XMega-specific
+//        code would not, at least by ME, be considered a "derived work", and as
+//        such, COULD be included in 'closed source' applications (for example).
+//        However, the original GPL license requirement exists for anything that
+//        is an actual "derived work".
+//        So, use discretion, if you use THIS as an example of "how to do TWI".
+// --------------------------------------------------------------------------------
+
 
 #include <math.h>
 #include <stdlib.h>
@@ -32,6 +48,7 @@
 
 //#define MASTER_SMART_ACK /* uncomment this to use 'smart ack' and not the ISR to generate acks from master */
 //#define MASTER_QUICK_COMMAND /* uncomment this to set the 'quick command' bit in init - this typically screws up though */
+//#define USE_STATIC_PORT_STATE /* uncomment this to pre-allocate buffers for all available TWI; otherwise, use malloc() */
 //#define DEBUG /* uncomment this for debug output - you must implement the debug output functions elsewhere */
 
 // NOTE:  'twi.h' includes Arduino.h which includes the correct pins_arduino.h file
@@ -63,24 +80,34 @@ typedef struct __TWI_STATE__
   volatile uint8_t twi_sendStop;   // should the transaction end with a stop?
   volatile uint8_t twi_error;
 
+  union // use a union to consolidate size a bit.  can't be BOTH master AND slave, right?
+  {
+    struct
+    {
+      // master stuff
+      uint8_t twi_masterBuffer[TWI_BUFFER_LENGTH];
+      volatile uint8_t twi_masterBufferIndex;
+      volatile uint8_t twi_masterBufferLength;
+    };
 
-  // master stuff
-  uint8_t twi_masterBuffer[TWI_BUFFER_LENGTH];
-  volatile uint8_t twi_masterBufferIndex;
-  volatile uint8_t twi_masterBufferLength;
+    struct
+    {
+      // slave stuff
+      uint8_t twi_txBuffer[TWI_BUFFER_LENGTH]; // this matches 'twi_masterBuffer' offset
+      volatile uint8_t twi_txBufferIndex;
+      volatile uint8_t twi_txBufferLength;
 
+      // extra members not present for 'master'
+      uint8_t twi_rxBuffer[TWI_BUFFER_LENGTH];
+      volatile uint8_t twi_rxBufferIndex;
 
-  // slave stuff
-  void (*twi_onSlaveTransmit)(TWI_t *);
-  void (*twi_onSlaveReceive)(TWI_t *, uint8_t*, int);
+      void (*twi_onSlaveTransmit)(TWI_t *, void *);                // call on 'start' before transmitting
+      void (*twi_onSlaveReceive)(TWI_t *, void *, const uint8_t *, int); // call on 'stop' or 're-start' after receive
 
-  uint8_t twi_txBuffer[TWI_BUFFER_LENGTH];
-  volatile uint8_t twi_txBufferIndex;
-  volatile uint8_t twi_txBufferLength;
-
-  uint8_t twi_rxBuffer[TWI_BUFFER_LENGTH];
-  volatile uint8_t twi_rxBufferIndex;
-
+      void *pTXCtx; // context pointer for twi_onSlaveTransmit
+      void *pRXCtx; // context pointer for twi_onSlaveReceive
+    };
+  };
 
 } TWI_STATE;
 
@@ -92,20 +119,22 @@ typedef struct __TWI_STATE__
 
 // each TWI port has its own 'port state' variables
 
+#ifdef USE_STATIC_PORT_STATE
+
 #ifdef TWI_PORT0
-TWI_STATE port0_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0, NULL, NULL, {0}, 0, 0, {0}, 0, 0, {0}, 0, 0};
+TWI_STATE port0_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0};
 #endif // TWI_PORT0
 
 #ifdef TWI_PORT1
-TWI_STATE port1_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0, NULL, NULL, {0}, 0, 0, {0}, 0, 0, {0}, 0, 0};
+TWI_STATE port1_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0};
 #endif // TWI_PORT1
 
 #ifdef TWI_PORT2
-TWI_STATE port2_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0, NULL, NULL, {0}, 0, 0, {0}, 0, 0, {0}, 0, 0};
+TWI_STATE port2_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0};
 #endif // TWI_PORT2
 
 #ifdef TWI_PORT3
-TWI_STATE port3_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0, NULL, NULL, {0}, 0, 0, {0}, 0, 0, {0}, 0, 0};
+TWI_STATE port3_state = { TWI_ADDRESS_MASTER, 0, 0, 0, 0};
 #endif // TWI_PORT3
 
 
@@ -139,98 +168,95 @@ static TWI_STATE *GetTWISTATE(TWI_t *pTWI)
   return NULL;
 }
 
+#else // !USE_STATIC_PORT_STATE
+
+#ifdef TWI_PORT0
+TWI_STATE *port0_state = NULL; // this will be allocated as-needed by 'malloc()'
+#endif // TWI_PORT0
+
+#ifdef TWI_PORT1
+TWI_STATE *port1_state = NULL;
+#endif // TWI_PORT1
+
+#ifdef TWI_PORT2
+TWI_STATE *port2_state = NULL;
+#endif // TWI_PORT2
+
+#ifdef TWI_PORT3
+TWI_STATE *port3_state = NULL;
+#endif // TWI_PORT3
+
+static TWI_STATE *ConstructPortState(void)
+{
+TWI_STATE *pRval;
+
+  pRval = (TWI_STATE *)malloc(sizeof(*pRval));
+
+  if(pRval)
+  {
+    memset(pRval, 0, sizeof(*pRval));
+    pRval->twi_address = TWI_ADDRESS_MASTER;
+  }
+
+  return pRval;
+}
+
+static TWI_STATE *GetTWISTATE(TWI_t *pTWI)
+{
+#ifdef TWI_PORT0
+  if(pTWI == &(TWI_PORT0))
+  {
+    if(!port0_state)
+    {
+      port0_state = ConstructPortState();
+    }
+
+    return port0_state;
+  }
+#endif // TWI_PORT0
+#ifdef TWI_PORT1
+  if(pTWI == &(TWI_PORT1))
+  {
+    if(!port1_state)
+    {
+      port1_state = ConstructPortState();
+    }
+
+    return port1_state;
+  }
+#endif // TWI_PORT1
+#ifdef TWI_PORT2
+  if(pTWI == &(TWI_PORT2))
+  {
+    if(!port2_state)
+    {
+      port2_state = ConstructPortState();
+    }
+
+    return port2_state;
+  }
+#endif // TWI_PORT2
+#ifdef TWI_PORT3
+  if(pTWI == &(TWI_PORT3))
+  {
+    if(!port3_state)
+    {
+      port3_state = ConstructPortState();
+    }
+
+    return port3_state;
+  }
+#endif // TWI_PORT0
+
+  return NULL;
+}
+
+#endif // USE_STATIC_PORT_STATE
+
 
 static __inline char IsMaster(TWI_STATE *pS)
 {
-  return pS ? pS->twi_address == TWI_ADDRESS_MASTER : 0; // marks this as 'master mode'
-}
-
-#define TW_MASTER_IDLE     0
-#define TW_SLAVE_READY     0
-
-#define TW_MASTER_BUSY     1
-#define TW_SLAVE_STOP      1
-
-#define TW_MASTER_CLKHOLD  2
-#define TW_SLAVE_CLKHOLD   2
-
-#define TW_MASTER_BUSERR   3
-#define TW_SLAVE_BUSERR    3
-
-#define TW_SLAVE_COLL      4 /* collision */
-
-#define TW_MASTER_ARBLOST  4
-#define TW_MASTER_OWNER    5
-#define TW_MASTER_UNKNOWN  6
-
-
-static uint8_t twiGetState(TWI_STATE *pS, TWI_t *pTWI)
-{
-uint8_t bState;
-
-  if(IsMaster(pS))
-  {
-    bState = pTWI->MASTER.STATUS;
-
-    if(bState & TWI_MASTER_ARBLOST_bm)
-    {
-      return TW_MASTER_ARBLOST;
-    }
-    else if(bState & TWI_MASTER_BUSERR_bm)
-    {
-      return TW_MASTER_BUSERR;
-    }
-    else if(bState & TWI_MASTER_CLKHOLD_bm)
-    {
-      return TW_MASTER_CLKHOLD;
-    }
-    else
-    {
-      bState &= TWI_MASTER_BUSSTATE_gm;
-
-      if(bState == TWI_MASTER_BUSSTATE_IDLE_gc)
-      {
-        return TW_MASTER_IDLE;
-      }
-      else if(bState == TWI_MASTER_BUSSTATE_OWNER_gc)
-      {
-        return TW_MASTER_OWNER;
-      }
-      else if(bState == TWI_MASTER_BUSSTATE_BUSY_gc)
-      {
-        return TW_MASTER_BUSY;
-      }
-      else // if(bState == TWI_MASTER_BUSSTATE_UNKNOWN_gc)
-      {
-        return TW_MASTER_UNKNOWN;
-      }
-    }
-  }
-  else
-  {
-    bState = pTWI->SLAVE.STATUS;
-
-    if(bState & TWI_SLAVE_CLKHOLD_bm)
-    {
-      return TW_SLAVE_CLKHOLD;
-    }
-    else if(bState & TWI_SLAVE_COLL_bm)
-    {
-      return TW_SLAVE_COLL; // collision
-    }
-    else if(bState & TWI_SLAVE_BUSERR_bm)
-    {
-      return TW_SLAVE_BUSERR;
-    }
-    else if((bState & TWI_SLAVE_AP_bm) && (bState & TWI_SLAVE_APIF_bm))
-    {
-      return TW_SLAVE_STOP;
-    }
-    else
-    {
-      return TW_SLAVE_READY;
-    }
-  }
+  return pS ? pS->twi_address == TWI_ADDRESS_MASTER : 0; // TWI_ADDRESS_MASTER marks this as 'master mode'
 }
 
 
@@ -242,12 +268,14 @@ uint8_t bState;
  *
  * for MASTER operation, do not call twi_setAddress() beforehand
  * for SLAVE operation, call twi_setAddress() with the slave address
+ * NOTE:  this is the way the original library was designed.
  */
 void twi_init(TWI_t *pTWI)
 {
 TWI_STATE *pS = GetTWISTATE(pTWI);
 char iSDA, iSCL;
-uint8_t oldSREG;
+uint8_t oldSREG, oldADDR;
+void *wTemp, *wTemp2;
 
 
   if(!pS)
@@ -288,23 +316,24 @@ uint8_t oldSREG;
   }
 #endif // TWI_PORT0
 
-  
-  // activate internal pullups for TWI (does this actually work?)
-
-//  pinMode(iSDA, INPUT_AND_PULLUP); // enables pullup resistor (TODO:  is this going to work?)
-//  pinMode(iSCL, INPUT_AND_PULLUP);
+  // TODO:  determine if using internal pullup resistors will in any way work
+  //        in order to limit the need for external components
   pinMode(iSDA, INPUT);
   pinMode(iSCL, INPUT);
-//  digitalWrite(iSDA, 1); // ensures output is in a '1' state if I switch
-//  digitalWrite(iSCL, 1);
 
 
-  // initialize state
-  oldSREG = pS->twi_address; // preserve in case twi_address was called before
+  // disable interrupts
+  oldSREG = SREG;
   cli();
 
+  oldADDR = pS->twi_address; // preserve in case twi_address was called before
+  wTemp = pS->twi_onSlaveTransmit;
+  wTemp2 = pS->twi_onSlaveReceive;
   memset(pS, 0, sizeof(*pS));
-  pS->twi_address = oldSREG; // restore it
+  pS->twi_address = oldADDR; // restore it
+  pS->twi_onSlaveTransmit = wTemp;
+  pS->twi_onSlaveReceive = wTemp2;
+
 
   pS->twi_state = TWI_READY;
   pS->twi_sendStop = true;    // default value
@@ -346,11 +375,15 @@ uint8_t oldSREG;
     pTWI->SLAVE.ADDRMASK = 0; // disable address mask (only respond to ADDR)
 
     // enable interface as slave and interrupts - AU manual 21.10.1
-    pTWI->SLAVE.CTRLA = TWI_SLAVE_INTLVL_HI_gc // high priority interrupt
+    pTWI->SLAVE.CTRLA = TWI_SLAVE_INTLVL_HI_gc // high priority interrupt level
                       | TWI_SLAVE_DIEN_bm      // enable data interrupt
+                      | TWI_SLAVE_APIEN_bm     // enable address/stop 'APIF' interrupt
                       | TWI_SLAVE_ENABLE_bm    // enable interface in 'slave' mode
-                      | TWI_SLAVE_PIEN_bm      // APIF interrupt for STOP condition
+#ifdef SLAVE_SMART_ACK
                       | TWI_SLAVE_SMEN_bm;     // enable 'SMART' acks (see CTRLB TWI_SLAVE_ACKACT_bm)
+#endif // SLAVE_SMART_ACK
+//                      | TWI_SLAVE_PMEN_bm      // temporarily enable promiscuous mode
+                      | TWI_SLAVE_PIEN_bm;     // APIF interrupt for STOP condition
   }
   else
   {
@@ -412,7 +445,7 @@ uint8_t oldSREG;
   SREG = oldSREG; // restore int flag
 
 
-  // re-initialize all global variables
+  // re-initialize all global variables. The API requires that the address be set for 'MASTER'
 
   pS->twi_address = TWI_ADDRESS_MASTER;  // slave address - FFH for MASTER
   pS->twi_state = 0;
@@ -421,6 +454,8 @@ uint8_t oldSREG;
 
   pS->twi_onSlaveTransmit = (void *)0;
   pS->twi_onSlaveReceive = (void *)0;
+  pS->pTXCtx = NULL;
+  pS->pRXCtx = NULL;
 
   pS->twi_masterBufferIndex = 0;
   pS->twi_masterBufferLength = 0;
@@ -702,6 +737,11 @@ error_return:
   }
   else
   {
+#ifdef DEBUG
+    error_print_("twi_writeTo error=");
+    error_printL((uint8_t)(pS->twi_error) & 0xff);
+#endif // DEBUG
+
     return 4;  // other twi error
   }
 }
@@ -719,13 +759,16 @@ error_return:
 uint8_t twi_transmit(TWI_t *pTWI, const uint8_t* data, uint8_t length)
 {
 TWI_STATE *pS = GetTWISTATE(pTWI);
-uint8_t i;
+uint8_t i1;
+
 
   if(!pS)
   {
     return 1;
   }
 
+  pS->twi_txBufferLength = 0; // just in case, clear first
+  
   // ensure data will fit into buffer
   if(TWI_BUFFER_LENGTH < length)
   {
@@ -740,9 +783,9 @@ uint8_t i;
   
   // set length and copy data into tx buffer
   pS->twi_txBufferLength = length;
-  for(i = 0; i < length; ++i)
+  for(i1 = 0; i1 < length; ++i1)
   {
-    pS->twi_txBuffer[i] = data[i];
+    pS->twi_txBuffer[i1] = data[i1];
   }
   
   return 0;
@@ -754,16 +797,23 @@ uint8_t i;
  * Input    function: callback function to use
  * Output   none
  */
-void twi_attachSlaveRxEvent(TWI_t * pTWI, void (*function)(TWI_t *,uint8_t*, int) )
+void twi_attachSlaveRxEvent(TWI_t * pTWI, void (*function)(TWI_t *, void *, const uint8_t *, int), void *pCtx )
 {
 TWI_STATE *pS = GetTWISTATE(pTWI);
+uint8_t oldSREG;
 
   if(!pS)
   {
     return;
   }
 
+  oldSREG = SREG;
+  cli(); // turn of interrupts to prevent accidentally sending wrong pRXCtx
+
   pS->twi_onSlaveReceive = function;
+  pS->pRXCtx = pCtx; // serialized to ensure consistency
+
+  SREG = oldSREG; // restore int flag, basically
 }
 
 /* 
@@ -772,63 +822,25 @@ TWI_STATE *pS = GetTWISTATE(pTWI);
  * Input    function: callback function to use
  * Output   none
  */
-void twi_attachSlaveTxEvent(TWI_t *pTWI, void (*function)(TWI_t *) )
+void twi_attachSlaveTxEvent(TWI_t *pTWI, void (*function)(TWI_t *, void *), void *pCtx )
 {
 TWI_STATE *pS = GetTWISTATE(pTWI);
+uint8_t oldSREG;
 
   if(!pS)
   {
     return;
   }
+
+  oldSREG = SREG;
+  cli(); // turn of interrupts to prevent accidentally sending wrong pTXCtx
 
   pS->twi_onSlaveTransmit = function;
+  pS->pTXCtx = pCtx; // serialized to ensure consistency
+
+  SREG = oldSREG; // restore int flag, basically
 }
 
-/* 
- * Function twi_reply
- * Desc     sends byte or readys receive line
- * Input    ack: byte indicating to ack or to nack
- * Output   none
- *
- * ONLY CALL THIS FOR ISR HANDLING OF DATA INTERRUPT
- */
-void twi_reply(TWI_t *pTWI, uint8_t ack)
-{
-TWI_STATE *pS = GetTWISTATE(pTWI);
-
-  if(!pS)
-  {
-    return;
-  }
-
-  // TODO:  do I use 'CMD' bits or quick command?
-  //        is this handled automatically by CTRLC 'ACKACT' bit with 'SMEN' set in CTRLB ?
-
-  if(!IsMaster(pS))
-  {
-    // ONLY in response to a data interrupt (send or receive)
-
-    if(ack)
-    {
-      pTWI->SLAVE.CTRLB = TWI_SLAVE_CMD_RESPONSE_gc; // ack bit is ZERO
-    }
-    else
-    {
-      pTWI->SLAVE.CTRLB = TWI_SLAVE_ACKACT_bm | TWI_SLAVE_CMD_RESPONSE_gc; // sends a NACK first
-    }
-  }
-  else
-  {
-    if(ack)
-    {
-      pTWI->MASTER.CTRLC = TWI_MASTER_CMD_RECVTRANS_gc; // ~ACK bit is ZERO
-    }
-    else
-    {
-      pTWI->MASTER.CTRLC = TWI_MASTER_ACKACT_bm | TWI_MASTER_CMD_RECVTRANS_gc; // sends a NACK first
-    }
-  }
-}
 
 /* 
  * Function twi_stop
@@ -948,158 +960,162 @@ uint8_t status;
 
   // type of interrupt:
 
-  if(status & TWI_SLAVE_APIF_bm) // address or stop
-  {
-    // write a '1' to this bit to clear it, or execute a command (like for DIF)
-    // SCL remains 'stretched' until I clear this bit (for address only)
-    // if PIEN bit is set in CTRLA, STOP will also set APIF
-    // for that reason I can check for it here
-
-    if(status & TWI_SLAVE_AP_bm) // it's an address (table 21-9 in AU manual)
-    {
-    }
-    else // it's a STOP
-    {
-    }
-
-    pTWI->SLAVE.STATUS = TWI_SLAVE_APIF_bm; // clear the bit
-  }
-
   if(status & TWI_SLAVE_BUSERR_bm) // bus error
   {
     // TODO:  what do I do for a bus error?  manual says master must enabled to detect this with its state logic
+   
+    pS->twi_state = TWI_READY; // bus NACK and I'm "off"
 
-    pTWI->SLAVE.STATUS = TWI_SLAVE_BUSERR_bm; // clear the bit
+    pS->twi_error = TWI_ERROR_BUS_ERROR;
+
+    pTWI->SLAVE.STATUS |= TWI_SLAVE_BUSERR_bm; // clear the bit
+
+#ifdef DEBUG
+    error_print("BUS error");
+#endif // DEBUG
   }
-
-  if(status & TWI_SLAVE_COLL_bm) // bus error
+  else if(status & TWI_SLAVE_COLL_bm) // slave collision
   {
     // manual says this is cleared by writing a '1', or by a START transaction from the master
 
-    pTWI->SLAVE.STATUS = TWI_SLAVE_COLL_bm; // clear the bit
-  }
+    pS->twi_state = TWI_READY; // bus NACK and I'm "off"
 
-  if(status & TWI_SLAVE_DIF_bm) // data interrupt
+    pS->twi_error = TWI_ERROR_COLLISION;
+
+    pTWI->SLAVE.STATUS |= TWI_SLAVE_COLL_bm; // clear the bit
+
+#ifdef DEBUG
+    error_print("COLLISION error");
+#endif // DEBUG
+  }
+  else
   {
-    // DIF bit will clear if I write '1' to it, or if I execute a command
-    // SCL remains 'stretched' until I clear this bit.
+    if(status & TWI_SLAVE_APIF_bm) // address or stop
+    {
+      // write a '1' to this bit to clear it, or execute a command (like for DIF)
+      // SCL remains 'stretched' until I clear this bit (for address only)
+      // if PIEN bit is set in CTRLA, STOP will also set APIF
+      // for that reason I can check for it here
 
 
+      // regardless, if I'm currently in 'read' mode, this terminates
+      // the read process and forces a read callback, either a 'STOP' or
+      // a 're-START' transaction in this case.
 
-    pTWI->SLAVE.STATUS = TWI_SLAVE_DIF_bm; // clear the bit
+      if(pS->twi_state == TWI_SRX) // slave read
+      {
+        if(pS->twi_onSlaveReceive)
+        {
+          pS->twi_onSlaveReceive(pTWI, pS->pRXCtx, pS->twi_rxBuffer, pS->twi_rxBufferIndex);
+        }
+
+        pS->twi_rxBufferIndex = 0;
+      }
+
+      pS->twi_state = TWI_READY; // pre-condition
+
+      if(status & TWI_SLAVE_AP_bm) // it's an address (table 21-9 in AU manual)
+      {
+        // NOTE:  it's either a START or a re-START.
+
+        if(status & TWI_SLAVE_DIR_bm) // read (from ME)
+        {
+          pS->twi_state = TWI_STX;
+          pS->twi_txBufferIndex = pS->twi_txBufferLength = 0; // initialize (TODO: only if onSlaveTransmit?)
+
+          // request for txBuffer to be filled and length to be set
+          // note: user must call twi_transmit(bytes, length) to do this
+          if(pS->twi_onSlaveTransmit)
+          {
+            pS->twi_onSlaveTransmit(pTWI, pS->pRXCtx);
+          }
+
+          // if they didn't change buffer & length, initialize it [old lib behavior did this]
+          if(0 == pS->twi_txBufferLength)
+          {
+            pS->twi_txBufferLength = 1;
+            pS->twi_txBuffer[0] = 0x00;
+          }
+
+          // this next part acknowledges the action
+          pTWI->SLAVE.CTRLB = TWI_SLAVE_CMD_RESPONSE_gc; // ack it
+        }
+        else // master writing to ME
+        {
+          pS->twi_state = TWI_SRX;
+
+          // this next part acknowledges the action by receiving the next byte
+
+          pTWI->SLAVE.CTRLB = TWI_SLAVE_CMD_RESPONSE_gc; // ack it
+        }
+      }
+      else // it's a STOP
+      {
+        // TODO:  anything else ??
+
+//        pTWI->SLAVE.CTRLB = TWI_SLAVE_CMD_COMPTRANS_gc; // ack 'complete' and wait for START sequence
+      }
+    }
+
+    if(status & TWI_SLAVE_DIF_bm) // data interrupt
+    {
+      // DIF bit will clear if I write '1' to it, or if I execute a command
+      // SCL remains 'stretched' until I clear this bit.
+
+      // read or write?
+      if(status & TWI_SLAVE_DIR_bm) // read (me transmit)
+      {
+        // send next byte
+        if(pS->twi_txBufferIndex < pS->twi_txBufferLength)
+        {
+          pTWI->SLAVE.DATA = pS->twi_txBuffer[pS->twi_txBufferIndex++];
+        }
+        else
+        {
+          pTWI->SLAVE.CTRLB = TWI_SLAVE_ACKACT_bm | TWI_SLAVE_CMD_COMPTRANS_gc; // NACK 'complete' and wait for START sequence
+
+#if 0 /* if I want to 'send more data' I _could_ do it THIS way */
+          if(pS->twi_onSlaveTransmit)
+          {
+            pS->twi_txBufferIndex = pS->twi_txBufferLength = 0; // re-initialize
+            pS->twi_onSlaveTransmit(pTWI, pS->pRXCtx);
+          }
+
+          // if they didn't change buffer & length, initialize it [old lib behavior did this]
+          if(0 == pS->twi_txBufferLength)
+          {
+            pTWI->SLAVE.DATA = 0xff; // "no data" value
+          }
+          else
+          {
+            pTWI->SLAVE.DATA = pS->twi_txBuffer[pS->twi_txBufferIndex++];
+          }
+#endif // 0          
+        }
+
+        pTWI->SLAVE.CTRLB = TWI_SLAVE_CMD_RESPONSE_gc; // send an ACK (as in "I have data for ya, enjoy")
+      }
+      else // write
+      {
+        // get next byte
+        if(pS->twi_rxBufferIndex < sizeof(pS->twi_rxBuffer))
+        {
+          pS->twi_rxBuffer[pS->twi_rxBufferIndex++] = pTWI->SLAVE.DATA;
+          pTWI->SLAVE.CTRLB = TWI_SLAVE_CMD_RESPONSE_gc; // send an ACK (as in 'thank you sir, may I have another?')
+        }
+        else
+        {
+//          pTWI->SLAVE.CTRLB = TWI_SLAVE_ACKACT_bm | TWI_SLAVE_CMD_RESPONSE_gc; // send a NACK (i.e. 'no more please, I'm full now')
+
+          pTWI->SLAVE.CTRLB = TWI_SLAVE_ACKACT_bm | TWI_SLAVE_CMD_COMPTRANS_gc; // NACK 'complete' and wait for START sequence
+        }
+      }
+
+      pTWI->SLAVE.STATUS = TWI_SLAVE_DIF_bm; // clear the bit
+    }
+
+    // NOTE:  I *could* end up with another start/stop interrupt while doing this...
   }
-
-
-#if 0
-  switch(TW_STATUS)
-  {
-    // Slave Receiver
-    case TW_SR_SLA_ACK:   // addressed, returned ack
-    case TW_SR_GCALL_ACK: // addressed generally, returned ack
-    case TW_SR_ARB_LOST_SLA_ACK:   // lost arbitration, returned ack
-    case TW_SR_ARB_LOST_GCALL_ACK: // lost arbitration, returned ack
-      // enter slave receiver mode
-      twi_state = TWI_SRX;
-      // indicate that rx buffer can be overwritten and ack
-      twi_rxBufferIndex = 0;
-      twi_reply(1);
-      break;
-    case TW_SR_DATA_ACK:       // data received, returned ack
-    case TW_SR_GCALL_DATA_ACK: // data received generally, returned ack
-      // if there is still room in the rx buffer
-      if(twi_rxBufferIndex < TWI_BUFFER_LENGTH)
-      {
-        // put byte in buffer and ack
-        twi_rxBuffer[twi_rxBufferIndex++] = TWDR;
-        twi_reply(1);
-      }
-      else
-      {
-        // otherwise nack
-        twi_reply(0);
-      }
-      break;
-    case TW_SR_STOP: // stop or repeated start condition received
-      // put a null char after data if there's room
-      if(twi_rxBufferIndex < TWI_BUFFER_LENGTH)
-      {
-        twi_rxBuffer[twi_rxBufferIndex] = '\0';
-      }
-      // sends ack and stops interface for clock stretching
-      twi_stop();
-
-      // callback to user defined callback
-      if(twi_onSlaveReceive)
-      {
-        twi_onSlaveReceive(twi_rxBuffer, twi_rxBufferIndex);
-      }
-
-      // since we submit rx buffer to "wire" library, we can reset it
-      twi_rxBufferIndex = 0;
-      // ack future responses and leave slave receiver state
-      twi_releaseBus();
-      break;
-    case TW_SR_DATA_NACK:       // data received, returned nack
-    case TW_SR_GCALL_DATA_NACK: // data received generally, returned nack
-      // nack back at master
-      twi_reply(0);
-      break;
-    
-    // Slave Transmitter
-    case TW_ST_SLA_ACK:          // addressed, returned ack
-    case TW_ST_ARB_LOST_SLA_ACK: // arbitration lost, returned ack
-      // enter slave transmitter mode
-      twi_state = TWI_STX;
-      // ready the tx buffer index for iteration
-      twi_txBufferIndex = 0;
-      // set tx buffer length to be zero, to verify if user changes it
-      twi_txBufferLength = 0;
-
-      // request for txBuffer to be filled and length to be set
-      // note: user must call twi_transmit(bytes, length) to do this
-      if(twi_onSlaveTransmit)
-      {
-        twi_onSlaveTransmit();
-      }
-
-      // if they didn't change buffer & length, initialize it
-      if(0 == twi_txBufferLength)
-      {
-        twi_txBufferLength = 1;
-        twi_txBuffer[0] = 0x00;
-      }
-      // transmit first byte from buffer, fall
-    case TW_ST_DATA_ACK: // byte sent, ack returned
-      // copy data to output register
-      TWDR = twi_txBuffer[twi_txBufferIndex++];
-      // if there is more to send, ack, otherwise nack
-      if(twi_txBufferIndex < twi_txBufferLength)
-      {
-        twi_reply(1);
-      }
-      else
-      {
-        twi_reply(0);
-      }
-      break;
-    case TW_ST_DATA_NACK: // received nack, we are done 
-    case TW_ST_LAST_DATA: // received ack, but we are done already!
-      // ack future responses
-      twi_reply(1);
-      // leave slave receiver state
-      twi_state = TWI_READY;
-      break;
-
-
-    // All
-    case TW_NO_INFO:   // no state information
-      break;
-    case TW_BUS_ERROR: // bus error, illegal stop/start
-      twi_error = TW_BUS_ERROR;
-      twi_stop();
-      break;
-  }
-#endif // 0
 
 }
 
@@ -1218,7 +1234,7 @@ uint8_t stat;
       pTWI->MASTER.STATUS = TWI_MASTER_CLKHOLD_bm | TWI_MASTER_RIF_bm; // clear hold bit NOW
 
       // add data to input buffer
-      if(stat & TWI_MASTER_RXACK_bm) // 'received acknowledged' clear when it was ACTUALLY received...
+      if(stat & TWI_MASTER_RXACK_bm) // slave sent RX 'NACK' indicating 'end of data'
       {
 #ifdef MASTER_SMART_ACK
         register uint8_t bTemp;
@@ -1232,8 +1248,13 @@ uint8_t stat;
 
         pTWI->MASTER.CTRLC = TWI_MASTER_ACKACT_bm | TWI_MASTER_CMD_RECVTRANS_gc; // sends a NACK first
 
-        pS->twi_state = TWI_MRX; // not 'STOP', actually (TODO:  make it 'stop' ?)
+//        pS->twi_state = TWI_MRX; // not 'STOP', actually (TODO:  make it 'stop' ?)
+        if(pS->twi_sendStop)
+        {
+          twi_stop(pTWI);
+        }
 
+        pS->twi_state = TWI_READY; // indicate that the data has stopped flowing and move on
 #endif // MASTER_SMART_ACK
       }
       else
@@ -1286,6 +1307,7 @@ uint8_t stat;
           if(pS->twi_sendStop)
           {
             twi_stop(pTWI);
+
             pS->twi_state = TWI_READY;
           }
 
