@@ -1,4 +1,18 @@
+//////////////////////////////////////////////////////////////////////////////
+//                                                                          //
+//                __  ____        __ _                _                     //
+//                \ \/ /\ \      / /(_) _ __  ___    | |__                  //
+//                 \  /  \ \ /\ / / | || '__|/ _ \   | '_ \                 //
+//                 /  \   \ V  V /  | || |  |  __/ _ | | | |                //
+//                /_/\_\   \_/\_/   |_||_|   \___|(_)|_| |_|                //
+//                                                                          //
+//                                                                          //
+//////////////////////////////////////////////////////////////////////////////
+
 /*
+  ORIGINAL COPYRIGHT BANNER for 'TwoWire.h' from which it is derived
+  (this includes the copyright terms, which apply to this, a derived work)
+
   TwoWire.h - TWI/I2C library for Arduino & Wiring
   Copyright (c) 2006 Nicholas Zambetti.  All right reserved.
 
@@ -19,6 +33,10 @@
   Modified 2012 by Todd Krein (todd@krein.org) to implement repeated starts
 */
 
+// Modified for XMega processors by Bob Frazier for XMegaForArduino project
+// http://github.com/XMegaForArduino
+
+
 #ifndef TwoWire_h
 #define TwoWire_h
 
@@ -35,12 +53,12 @@
 class TwoWire : public Stream
 {
   protected:
-    /*static*/ uint8_t rxBuffer[];
+    /*static*/ uint8_t rxBuffer[TWO_WIRE_BUFFER_LENGTH];
     /*static*/ uint8_t rxBufferIndex;
     /*static*/ uint8_t rxBufferLength;
 
     /*static*/ uint8_t txAddress;
-    /*static*/ uint8_t txBuffer[];
+    /*static*/ uint8_t txBuffer[TWO_WIRE_BUFFER_LENGTH];
     /*static*/ uint8_t txBufferIndex;
     /*static*/ uint8_t txBufferLength;
 

@@ -23,7 +23,8 @@ onRequest	KEYWORD2
 # Instances (KEYWORD2)
 #######################################
 
-XWire	KEYWORD2
+# the name of the default object (it's still 'Wire')
+Wire	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)

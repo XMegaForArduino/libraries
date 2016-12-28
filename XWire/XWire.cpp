@@ -1,4 +1,18 @@
+//////////////////////////////////////////////////////////////////////////////
+//                                                                          //
+//          __  ____        __ _                                            //
+//          \ \/ /\ \      / /(_) _ __  ___     ___  _ __   _ __            //
+//           \  /  \ \ /\ / / | || '__|/ _ \   / __|| '_ \ | '_ \           //
+//           /  \   \ V  V /  | || |  |  __/ _| (__ | |_) || |_) |          //
+//          /_/\_\   \_/\_/   |_||_|   \___|(_)\___|| .__/ | .__/           //
+//                                                  |_|    |_|              //
+//                                                                          //
+//////////////////////////////////////////////////////////////////////////////
+
 /*
+  ORIGINAL COPYRIGHT BANNER for 'TwoWire.cpp' from which it is derived
+  (this includes the copyright terms, which apply to this, a derived work)
+
   TwoWire.cpp - TWI/I2C library for Wiring & Arduino
   Copyright (c) 2006 Nicholas Zambetti.  All right reserved.
 
@@ -18,6 +32,11 @@
  
   Modified 2012 by Todd Krein (todd@krein.org) to implement repeated starts
 */
+
+// Modified for XMega processors by Bob Frazier for XMegaForArduino project
+// http://github.com/XMegaForArduino
+
+
 
 extern "C"
 {
@@ -153,7 +172,7 @@ uint8_t TwoWire::requestFrom(uint8_t address, uint8_t quantity, uint8_t sendStop
     quantity = TWO_WIRE_BUFFER_LENGTH;
   }
   // perform blocking read into buffer
-  uint8_t read = twi_readFrom(pTWI, address, rxBuffer, quantity, sendStop);
+  uint8_t read = twi_readFrom(pTWI, address, rxBuffer, quantity, sendStop, 10);
 
   // set rx buffer iterator vars
   rxBufferIndex = 0;

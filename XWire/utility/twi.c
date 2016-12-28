@@ -1,5 +1,17 @@
+//////////////////////////////////////////////////////////////////////////////
+//                                                                          //
+//                         _              _                                 //
+//                        | |_ __      __(_)    ___                         //
+//                        | __|\ \ /\ / /| |   / __|                        //
+//                        | |_  \ V  V / | | _| (__                         //
+//                         \__|  \_/\_/  |_|(_)\___|                        //
+//                                                                          //
+//                                                                          //
+//////////////////////////////////////////////////////////////////////////////
+
 /*
   ** ORIGINAL COPYRIGHT BANNER **
+  (this includes the copyright terms, which apply to this, a derived work)
 
   twi.c - TWI/I2C library for Wiring & Arduino
   Copyright (c) 2006 Nicholas Zambetti.  All right reserved.
@@ -507,7 +519,7 @@ TWI_STATE *pS = GetTWISTATE(pTWI);
  * NOTE: this function BLOCKS until complete.  TODO, a timeout and a 0 length returned on timeout
  *       also do NOT call this function with interrupts disabled or it WILL hang!
  */
-uint8_t twi_readFrom(TWI_t *pTWI, uint8_t address, uint8_t* data, uint8_t length, uint16_t wait_timeout)
+uint8_t twi_readFrom(TWI_t *pTWI, uint8_t address, uint8_t* data, uint8_t length, uint8_t sendStop, uint16_t wait_timeout)
 {
 TWI_STATE *pS = GetTWISTATE(pTWI);
 uint8_t i1;

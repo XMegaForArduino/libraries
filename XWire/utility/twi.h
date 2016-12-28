@@ -1,4 +1,18 @@
+//////////////////////////////////////////////////////////////////////////////
+//                                                                          //
+//                        _              _     _                            //
+//                       | |_ __      __(_)   | |__                         //
+//                       | __|\ \ /\ / /| |   | '_ \                        //
+//                       | |_  \ V  V / | | _ | | | |                       //
+//                        \__|  \_/\_/  |_|(_)|_| |_|                       //
+//                                                                          //
+//                                                                          //
+//////////////////////////////////////////////////////////////////////////////
+
 /*
+  ** ORIGINAL COPYRIGHT BANNER **
+  (this includes the copyright terms, which apply to this, a derived work)
+
   twi.h - TWI/I2C library for Wiring & Arduino
   Copyright (c) 2006 Nicholas Zambetti.  All right reserved.
 
@@ -61,7 +75,7 @@ extern "C"
   void twi_init(TWI_t *);          // call *AFTER* 'setAddress()' for slave
   void twi_shutdown(TWI_t *);      // added, shuts down TWI so you can re-start it without booting
   void twi_setAddress(TWI_t *, uint8_t); // call this *BEFORE* calling 'twi_init()' for slave
-  uint8_t twi_readFrom(TWI_t *, uint8_t, uint8_t*, uint8_t, uint16_t);
+  uint8_t twi_readFrom(TWI_t *, uint8_t, uint8_t*, uint8_t, uint8_t, uint16_t);
   uint8_t twi_writeTo(TWI_t *, uint8_t, uint8_t*, uint8_t, uint8_t, uint8_t);
   uint8_t twi_transmit(TWI_t *, const uint8_t*, uint8_t);
   void twi_attachSlaveRxEvent(TWI_t *, void (*)(TWI_t *, void *, const uint8_t *, int), void * );
