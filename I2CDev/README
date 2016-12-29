@@ -1,0 +1,47 @@
+I2CDev library - unofficial clone from:
+
+    https://github.com/jrowberg/i2cdevlib/tree/master/Arduino/I2Cdev
+
+This version has been modified to work with the XWire library for the XMega
+processor.  The default constructor will use the TWI_DEFAULT definitions for
+the two wire interface.  A new constructor has been added that will allow
+you to specify an interface as a 'TWI_t *', directly compatible with XWire.
+
+A lot of 'compatibility' code remains.  The intent is to make it possible to
+merge it back in with the original library.  That includes the (unfortunate)
+use of K&R coding style, which has been left 'as-is'.
+
+
+It is provided 'as-is'.  A few modifications were made in order to support
+running with XWire, particularly the addition of a new constructor, and
+the 'begin' method. 
+
+
+For XMega, it does not rely on the 'Wire' object.  Instead, you construct
+it for the interface you want, and call the 'begin()' method.  The default
+constructor uses 'TWI_DEFAULT' for the interface.
+
+Example:
+
+I2CDev i2c(&(TWIC));
+
+...
+
+  i2c.begin();
+
+...
+
+This should also work if you use this library for regular 'ATMega' Arduino
+things, as all of the original Arduino code should be there.  In the ATMega
+implementation, calling I2CDev::begin() will call 'Wire.begin()', which is
+a necessary step in using I2CDev (I do not know why it was not made into
+a member function the way I did it).
+
+
+There has also been some re-formatting.  basically, I do _NOT_ like K&R
+style and so I removed "some of that" so I could read the code more easily.
+So if you did a 'diff' between this code and the original library at
+the abovementioned github site, you would see additional changes related to
+placing curly braces on their own line, and fixing some of the indents.
+
+

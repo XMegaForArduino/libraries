@@ -45,7 +45,7 @@
 #include <inttypes.h>
 #include "Stream.h"
 
-#include "utility/twi.h"
+#include "utility/twi.h" /* this allows use of the 'twi.h' low-level interface also, by including THIS file */
 
 #define TWO_WIRE_BUFFER_LENGTH 32 /* matches TWI_BUFFER_LENGTH in 'twi.h' for now */
 
