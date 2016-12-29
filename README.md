@@ -1,6 +1,6 @@
-libraries<br>
-=========<br>
-<br>
+libraries
+=========
+
 libraries directory tree, intended to be placed in sketchbook/libraries (or similar),
 for xmega-specific libs.<br>
 <br>
@@ -21,7 +21,8 @@ I2CDev - A modified version of the 'I2CDev' library that works with XWire<br>
 Most (if not all) of the libraries are derived from the originals shipped with
 Arduino 1.06 and are licensed using [L]GPL v2 or v3.  The same licenses
 apply here, and of course (like the originals) they are available to you
-free of charge in accordance with the original license terms.
+free of charge in accordance with the original license terms.<br>
+<br>
 <br>
 The I2CDev library is licensed with an M.I.T. license, and was essentially
 'cloned' from the following github location:<br>
