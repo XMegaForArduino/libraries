@@ -18,7 +18,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-// adapted for the ATXMega processors by Bob Frazier, S.F.T. Inc.
+// adapted for the ATXMega processors by Bob Frazier, S.F.T. Inc. and partially refactored to remove warnings, improve readability
+
 
 #include <Arduino.h>
 #include "Sd2Card.h"
@@ -71,6 +72,8 @@ static void spiSend(uint8_t b)
 register uint8_t tval = SPIREG_STATUS; // read status register [to clear the bit]
 volatile short ctr; // temporary
 
+  tval = tval; // so I don't get an 'unused variable' warning
+
   SPIREG_STATUS = SPI_IF_bm; // this is ALSO supposed to clear the bit
 
   SPIREG_DATA = b; // accessing the SPIREG_DATA clears the status bit (D manual, 18.6.3)
@@ -89,6 +92,8 @@ static  uint8_t spiRec(void)
 {
   register uint8_t tval = SPIREG_STATUS; // read status register [to clear the bit]
   volatile short ctr; // temporary
+
+  tval = tval; // so I don't get an 'unused variable' warning
 
   SPIREG_STATUS = SPI_IF_bm; // this is ALSO supposed to clear the bit
   SPIREG_STATUS = 0; // temporary, for testing
@@ -311,7 +316,8 @@ uint8_t Sd2Card::cardCommand(uint8_t cmd, uint32_t arg)
   spiSend(crc);
 
   // wait for response
-  for (uint8_t i = 0; ((status_ = spiRec()) & 0X80) && i != 0XFF; i++) {}
+  for (uint8_t i = 0; ((status_ = spiRec()) & 0X80) && i != 0XFF; i++)
+  { }
 
   return status_;
 }
@@ -584,12 +590,16 @@ uint8_t Sd2Card::readBlock(uint32_t block, uint8_t* dst)
 uint8_t Sd2Card::readData(uint32_t block,
         uint16_t offset, uint16_t count, uint8_t* dst)
 {
-  uint16_t n;
-  if (count == 0) return true;
+//  uint16_t n; not used; left for reference just in case
+
+  if (count == 0)
+    return true;
+
   if ((count + offset) > 512)
   {
     goto fail;
   }
+
   if (!inBlock_ || block != block_ || offset < offset_)
   {
     block_ = block;
@@ -641,10 +651,12 @@ uint8_t Sd2Card::readData(uint32_t block,
     // read rest of data, checksum and set chip select high
     readEnd();
   }
+
   return true;
 
- fail:
+fail:
   chipSelectHigh();
+
   return false;
 }
 //------------------------------------------------------------------------------
@@ -761,7 +773,8 @@ uint8_t Sd2Card::waitNotBusy(uint16_t timeoutMillis)
 }
 //------------------------------------------------------------------------------
 /** Wait for start block token */
-uint8_t Sd2Card::waitStartBlock(void) {
+uint8_t Sd2Card::waitStartBlock(void)
+{
   uint16_t t0 = millis();
   while ((status_ = spiRec()) == 0XFF)
   {
