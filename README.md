@@ -18,6 +18,7 @@ XSPI   - SPI library, modified for XMega.  Use '#include &lt;XSPI.h&gt;'<br>
 XSD    - SD Card library, modified for XMega.  Use '#include &lt;XSD.h&gt;'<br>
 XWire  - 'Wire' library, modified for XMega.  Use '#include &lt;XWire.h&gt;'<br>
 I2CDev - A modified version of the 'I2CDev' library that works with XWire<br>
+QDec   - Quadrature decoding library. Modified from the AVR1600 code.<br>
 <br>
 <br>
 Most (if not all) of the libraries are derived from the originals shipped with
