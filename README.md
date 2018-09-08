@@ -7,8 +7,10 @@ for xmega-specific libs.<br>
 The files in this directory tree are likely to be derived from the Arduino IDE headers
 and implementation for standard Arduino libraries.  To avoid collision, and avoid
 problems with software upgrades, you should copy these to your private 'sketchbook'
-libraries directory.  Assuming your sketchbook is '~/sketchbook', the contents of
-this directory would be copied to '~/sketchbook/libraries/'.<br>
+libraries directory.  Assuming your sketchbook is `~/sketchbook`, the contents of
+this directory would be copied to `~/sketchbook/libraries/`. You can find the location
+of your sketchbook directory in the Arduino IDE at **File > Preferences > Sketchbook
+location**<br>
 <br>
 the following libraries are included:<br>
 <br>
